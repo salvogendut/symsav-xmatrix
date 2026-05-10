@@ -35,13 +35,30 @@
 #define GLOW_MAX  4         /* frames a new char stays bright */
 
 // -----------------------------------------------------------------------
-// 8x8 font source bitmaps: 1 bit per pixel, 8 bytes per glyph
-// Characters 0-9: digits; 10-19: matrix-style symbols
+// 8x8 font source bitmaps: '.' = background, '#' = foreground pixel
 // -----------------------------------------------------------------------
 
-static const unsigned char font_src[NGLYPHS][8] = {
-    { 0x3C, 0x66, 0x6E, 0x76, 0x66, 0x66, 0x3C, 0x00 }, /* 0 */
-    { 0x18, 0x38, 0x18, 0x18, 0x18, 0x18, 0x7E, 0x00 }, /* 1 */
+static const char *font_art[NGLYPHS][8] = {
+    { /* 0 */
+        "..####..",
+        ".##..##.",
+        ".##.###.",
+        ".###.##.",
+        ".##..##.",
+        ".##..##.",
+        "..####..",
+        "........",
+    },
+    { /* 1 */
+        "...##...",
+        "..###...",
+        "...##...",
+        "...##...",
+        "...##...",
+        "...##...",
+        ".######.",
+        "........",
+    },
 };
 
 // Pre-encoded Mode 1 font: 2 variants * NGLYPHS * 8 rows * 2 bytes
@@ -83,13 +100,22 @@ static unsigned short row_base[GRID_H];
 
 static void build_font(void)
 {
-    unsigned char g, r, src, hi, lo;
+    unsigned char g, r, hi, lo;
+    const char *row;
 
     for (g = 0; g < NGLYPHS; g++) {
         for (r = 0; r < 8; r++) {
-            src = font_src[g][r];
-            hi  = (src >> 4) & 0x0F;
-            lo  =  src       & 0x0F;
+            row = font_art[g][r];
+            hi = 0;
+            if (row[0] == '#') hi |= 0x08;
+            if (row[1] == '#') hi |= 0x04;
+            if (row[2] == '#') hi |= 0x02;
+            if (row[3] == '#') hi |= 0x01;
+            lo = 0;
+            if (row[4] == '#') lo |= 0x08;
+            if (row[5] == '#') lo |= 0x04;
+            if (row[6] == '#') lo |= 0x02;
+            if (row[7] == '#') lo |= 0x01;
 
             // bright: fg=ink3 (lo=1,hi=1), bg=ink1 (lo=1,hi=0)
             // Upper nibble: all pixels have lo=1 -> always 0xF0
