@@ -32,7 +32,9 @@
 #define SCREEN_H  200
 #define GRID_W    40        /* 320 / 8 */
 #define GRID_H    25        /* 200 / 8 */
-#define NGLYPHS   2
+#define NGLYPHS_BINARY 2
+#define NGLYPHS_HANA   9
+#define NGLYPHS_TOTAL  11
 #define GLOW_MAX   6        /* total glow frames on new char */
 #define GLOW_WHITE 3        /* glow > GLOW_WHITE -> white, else bright */
 
@@ -40,8 +42,8 @@
 // 8x8 font source bitmaps: '.' = background, '#' = foreground pixel
 // -----------------------------------------------------------------------
 
-static const char *font_art[NGLYPHS][8] = {
-    { /* 0 */
+static const char *font_art[NGLYPHS_TOTAL][8] = {
+    { /* binary: 0 */
         "..####..",
         ".##..##.",
         ".##.###.",
@@ -51,7 +53,7 @@ static const char *font_art[NGLYPHS][8] = {
         "..####..",
         "........",
     },
-    { /* 1 */
+    { /* binary: 1 */
         "...##...",
         "..###...",
         "...##...",
@@ -61,12 +63,102 @@ static const char *font_art[NGLYPHS][8] = {
         ".######.",
         "........",
     },
+    { /* hana: エ (e) */
+        "########",
+        "...##...",
+        "...##...",
+        "...##...",
+        "...##...",
+        "########",
+        "........",
+        "........",
+    },
+    { /* hana: コ (ko) */
+        ".######.",
+        ".##.....",
+        ".##.....",
+        ".##.....",
+        ".##.....",
+        ".######.",
+        "........",
+        "........",
+    },
+    { /* hana: ス (su) */
+        ".######.",
+        "....##..",
+        "...##...",
+        "..####..",
+        ".##..##.",
+        "##....##",
+        "........",
+        "........",
+    },
+    { /* hana: ト (to) */
+        "....##..",
+        "....##..",
+        ".#######",
+        "....##..",
+        "....##..",
+        "....##..",
+        "........",
+        "........",
+    },
+    { /* hana: ネ (ne) */
+        "...##...",
+        "########",
+        "...##...",
+        ".##..##.",
+        "##....##",
+        "........",
+        "........",
+        "........",
+    },
+    { /* hana: ク (ku) */
+        ".######.",
+        "......##",
+        ".....##.",
+        "....##..",
+        "...##...",
+        "..##....",
+        "........",
+        "........",
+    },
+    { /* hana: ロ (ro) */
+        ".######.",
+        ".##..##.",
+        ".##..##.",
+        ".##..##.",
+        ".##..##.",
+        ".######.",
+        "........",
+        "........",
+    },
+    { /* hana: モ (mo) */
+        "..####..",
+        "...##...",
+        "########",
+        "...##...",
+        "...#####",
+        "........",
+        "........",
+        "........",
+    },
+    { /* hana: ツ (tsu) */
+        ".##.####",
+        ".##..##.",
+        "..##.##.",
+        "....####",
+        "....###.",
+        "...##...",
+        "........",
+        "........",
+    },
 };
 
 // Pre-encoded Mode 1 font: flat arrays, 16 bytes per glyph (8 rows * 2 bytes)
-_data unsigned char font_white[NGLYPHS * 16];  /* fg=ink0, bg=ink1 */
-_data unsigned char font_bright[NGLYPHS * 16]; /* fg=ink3, bg=ink1 */
-_data unsigned char font_dim[NGLYPHS * 16];    /* fg=ink2, bg=ink1 */
+_data unsigned char font_white[NGLYPHS_TOTAL * 16];  /* fg=ink0, bg=ink1 */
+_data unsigned char font_bright[NGLYPHS_TOTAL * 16]; /* fg=ink3, bg=ink1 */
+_data unsigned char font_dim[NGLYPHS_TOTAL * 16];    /* fg=ink2, bg=ink1 */
 
 // Screen clear buffer: one CPC character plane (25 rows * 80 bytes = 2000)
 // filled with 0xF0 = ink1 (black) for all 4 pixels per byte
@@ -106,7 +198,7 @@ static void build_font(void)
     unsigned char g, r, hi, lo;
     const char *row;
 
-    for (g = 0; g < NGLYPHS; g++) {
+    for (g = 0; g < NGLYPHS_TOTAL; g++) {
         for (r = 0; r < 8; r++) {
             row = font_art[g][r];
             hi = 0;
@@ -201,7 +293,8 @@ static void erase_cell(unsigned char cx, unsigned char cy)
 // Animation tick
 // -----------------------------------------------------------------------
 
-static void anim_tick(unsigned char density, unsigned char speed)
+static void anim_tick(unsigned char density, unsigned char speed,
+                      unsigned char glyph_base, unsigned char nglyphs)
 {
     unsigned int idx;
     unsigned char x;
@@ -223,7 +316,7 @@ static void anim_tick(unsigned char density, unsigned char speed)
         if ((unsigned char)f->y < GRID_H) {
             c = &cells[(unsigned char)f->y * GRID_W + x];
             if (f->remaining > 0) {
-                c->glyph = (rand() % NGLYPHS) + 1u;
+                c->glyph = glyph_base + (rand() % nglyphs) + 1u;
                 c->glow  = GLOW_MAX;
                 c->dirty = 1;
                 f->remaining--;
@@ -286,39 +379,47 @@ static void anim_tick(unsigned char density, unsigned char speed)
 // Config data and dialog
 // -----------------------------------------------------------------------
 
-// cfgdat[0..3] = "MATX" magic; [4] = density (1-3); [5] = speed (1-3)
-_transfer char cfgdat[6]         = { 'M', 'A', 'T', 'X', 2, 2 };
-_transfer char tmp_density       = 2;
-_transfer char tmp_speed         = 2;
-_transfer char cfg_prz           = 0;
-_transfer signed char cfgwin_id  = -1;
+// cfgdat[0..3] = "MATX" magic; [4] = density (1-3); [5] = speed (1-3); [6] = glyphset (1=binary, 2=hana)
+_transfer char cfgdat[7]           = { 'M', 'A', 'T', 'X', 2, 2, 1 };
+_transfer char tmp_density         = 2;
+_transfer char tmp_speed           = 2;
+_transfer char tmp_glyphset        = 1;
+_transfer char cfg_prz             = 0;
+_transfer signed char cfgwin_id    = -1;
 
-_transfer char rg_density[4]     = { -1, -1, -1, -1 };
-_transfer char rg_speed[4]       = { -1, -1, -1, -1 };
+_transfer char rg_density[4]       = { -1, -1, -1, -1 };
+_transfer char rg_speed[4]         = { -1, -1, -1, -1 };
+_transfer char rg_glyphset[4]      = { -1, -1, -1, -1 };
 
-_transfer Ctrl_TFrame cfg_tf     = { "Settings",  (COLOR_BLACK<<2)|COLOR_ORANGE, 0 };
-_transfer Ctrl_Text   cfg_lbl_d  = { "Density:",  (COLOR_BLACK<<2)|COLOR_ORANGE, 0 };
-_transfer Ctrl_Text   cfg_lbl_s  = { "Speed:",    (COLOR_BLACK<<2)|COLOR_ORANGE, 0 };
+_transfer Ctrl_TFrame cfg_tf       = { "Settings",  (COLOR_BLACK<<2)|COLOR_ORANGE, 0 };
+_transfer Ctrl_Text   cfg_lbl_d    = { "Density:",  (COLOR_BLACK<<2)|COLOR_ORANGE, 0 };
+_transfer Ctrl_Text   cfg_lbl_s    = { "Speed:",    (COLOR_BLACK<<2)|COLOR_ORANGE, 0 };
+_transfer Ctrl_Text   cfg_lbl_g    = { "Glyphs:",   (COLOR_BLACK<<2)|COLOR_ORANGE, 0 };
 
-_transfer Ctrl_Radio cfg_rad_d1  = { &tmp_density, "Sparse", (COLOR_BLACK<<2)|COLOR_ORANGE, 1, rg_density };
-_transfer Ctrl_Radio cfg_rad_d2  = { &tmp_density, "Normal", (COLOR_BLACK<<2)|COLOR_ORANGE, 2, rg_density };
-_transfer Ctrl_Radio cfg_rad_d3  = { &tmp_density, "Dense",  (COLOR_BLACK<<2)|COLOR_ORANGE, 3, rg_density };
-_transfer Ctrl_Radio cfg_rad_s1  = { &tmp_speed,   "Slow",   (COLOR_BLACK<<2)|COLOR_ORANGE, 1, rg_speed   };
-_transfer Ctrl_Radio cfg_rad_s2  = { &tmp_speed,   "Normal", (COLOR_BLACK<<2)|COLOR_ORANGE, 2, rg_speed   };
-_transfer Ctrl_Radio cfg_rad_s3  = { &tmp_speed,   "Fast",   (COLOR_BLACK<<2)|COLOR_ORANGE, 3, rg_speed   };
+_transfer Ctrl_Radio cfg_rad_d1    = { &tmp_density,  "Sparse", (COLOR_BLACK<<2)|COLOR_ORANGE, 1, rg_density  };
+_transfer Ctrl_Radio cfg_rad_d2    = { &tmp_density,  "Normal", (COLOR_BLACK<<2)|COLOR_ORANGE, 2, rg_density  };
+_transfer Ctrl_Radio cfg_rad_d3    = { &tmp_density,  "Dense",  (COLOR_BLACK<<2)|COLOR_ORANGE, 3, rg_density  };
+_transfer Ctrl_Radio cfg_rad_s1    = { &tmp_speed,    "Slow",   (COLOR_BLACK<<2)|COLOR_ORANGE, 1, rg_speed    };
+_transfer Ctrl_Radio cfg_rad_s2    = { &tmp_speed,    "Normal", (COLOR_BLACK<<2)|COLOR_ORANGE, 2, rg_speed    };
+_transfer Ctrl_Radio cfg_rad_s3    = { &tmp_speed,    "Fast",   (COLOR_BLACK<<2)|COLOR_ORANGE, 3, rg_speed    };
+_transfer Ctrl_Radio cfg_rad_g1    = { &tmp_glyphset, "Binary", (COLOR_BLACK<<2)|COLOR_ORANGE, 1, rg_glyphset };
+_transfer Ctrl_Radio cfg_rad_g2    = { &tmp_glyphset, "Kana",   (COLOR_BLACK<<2)|COLOR_ORANGE, 2, rg_glyphset };
 
-_transfer Ctrl ccc0  = { 0,  C_AREA,   -1, COLOR_ORANGE,                   0,  0, 208, 62, 0 };
-_transfer Ctrl ccc1  = { 0,  C_TFRAME, -1, (unsigned short)&cfg_tf,        2,  1, 204, 38, 0 };
-_transfer Ctrl ccc2  = { 0,  C_TEXT,   -1, (unsigned short)&cfg_lbl_d,     8, 10,  44,  8, 0 };
-_transfer Ctrl ccc3  = { 0,  C_RADIO,  -1, (unsigned short)&cfg_rad_d1,   56, 10,  38,  8, 0 };
-_transfer Ctrl ccc4  = { 0,  C_RADIO,  -1, (unsigned short)&cfg_rad_d2,   96, 10,  38,  8, 0 };
-_transfer Ctrl ccc5  = { 0,  C_RADIO,  -1, (unsigned short)&cfg_rad_d3,  136, 10,  34,  8, 0 };
-_transfer Ctrl ccc6  = { 0,  C_TEXT,   -1, (unsigned short)&cfg_lbl_s,     8, 22,  44,  8, 0 };
-_transfer Ctrl ccc7  = { 0,  C_RADIO,  -1, (unsigned short)&cfg_rad_s1,   56, 22,  30,  8, 0 };
-_transfer Ctrl ccc8  = { 0,  C_RADIO,  -1, (unsigned short)&cfg_rad_s2,   88, 22,  38,  8, 0 };
-_transfer Ctrl ccc9  = { 0,  C_RADIO,  -1, (unsigned short)&cfg_rad_s3,  128, 22,  30,  8, 0 };
-_transfer Ctrl ccc10 = { 10, C_BUTTON, -1, (unsigned short)"OK",          54, 46,  32, 12, 0 };
-_transfer Ctrl ccc11 = { 11, C_BUTTON, -1, (unsigned short)"Cancel",      94, 46,  52, 12, 0 };
+_transfer Ctrl ccc0  = { 0,  C_AREA,   -1, COLOR_ORANGE,                    0,  0, 208, 74, 0 };
+_transfer Ctrl ccc1  = { 0,  C_TFRAME, -1, (unsigned short)&cfg_tf,         2,  1, 204, 50, 0 };
+_transfer Ctrl ccc2  = { 0,  C_TEXT,   -1, (unsigned short)&cfg_lbl_d,      8, 10,  44,  8, 0 };
+_transfer Ctrl ccc3  = { 0,  C_RADIO,  -1, (unsigned short)&cfg_rad_d1,    56, 10,  38,  8, 0 };
+_transfer Ctrl ccc4  = { 0,  C_RADIO,  -1, (unsigned short)&cfg_rad_d2,    96, 10,  38,  8, 0 };
+_transfer Ctrl ccc5  = { 0,  C_RADIO,  -1, (unsigned short)&cfg_rad_d3,   136, 10,  34,  8, 0 };
+_transfer Ctrl ccc6  = { 0,  C_TEXT,   -1, (unsigned short)&cfg_lbl_s,      8, 22,  44,  8, 0 };
+_transfer Ctrl ccc7  = { 0,  C_RADIO,  -1, (unsigned short)&cfg_rad_s1,    56, 22,  30,  8, 0 };
+_transfer Ctrl ccc8  = { 0,  C_RADIO,  -1, (unsigned short)&cfg_rad_s2,    88, 22,  38,  8, 0 };
+_transfer Ctrl ccc9  = { 0,  C_RADIO,  -1, (unsigned short)&cfg_rad_s3,   128, 22,  30,  8, 0 };
+_transfer Ctrl ccc10 = { 10, C_BUTTON, -1, (unsigned short)"OK",            54, 58,  32, 12, 0 };
+_transfer Ctrl ccc11 = { 11, C_BUTTON, -1, (unsigned short)"Cancel",        94, 58,  52, 12, 0 };
+_transfer Ctrl ccc12 = { 0,  C_TEXT,   -1, (unsigned short)&cfg_lbl_g,      8, 34,  44,  8, 0 };
+_transfer Ctrl ccc13 = { 0,  C_RADIO,  -1, (unsigned short)&cfg_rad_g1,    56, 34,  46,  8, 0 };
+_transfer Ctrl ccc14 = { 0,  C_RADIO,  -1, (unsigned short)&cfg_rad_g2,   106, 34,  34,  8, 0 };
 
 _transfer Ctrl_Group cfgcg;
 _transfer Window     cfgwin;
@@ -338,14 +439,16 @@ static void cfg_open(void)
 {
     if (cfgwin_id >= 0) return;
 
-    tmp_density = cfgdat[4];
-    tmp_speed   = cfgdat[5];
+    tmp_density   = cfgdat[4];
+    tmp_speed     = cfgdat[5];
+    tmp_glyphset  = cfgdat[6];
 
-    rg_density[0] = rg_density[1] = rg_density[2] = rg_density[3] = -1;
-    rg_speed[0]   = rg_speed[1]   = rg_speed[2]   = rg_speed[3]   = -1;
+    rg_density[0]  = rg_density[1]  = rg_density[2]  = rg_density[3]  = -1;
+    rg_speed[0]    = rg_speed[1]    = rg_speed[2]    = rg_speed[3]    = -1;
+    rg_glyphset[0] = rg_glyphset[1] = rg_glyphset[2] = rg_glyphset[3] = -1;
 
     memset(&cfgcg, 0, sizeof(cfgcg));
-    cfgcg.controls = 12;
+    cfgcg.controls = 15;
     cfgcg.pid      = _sympid;
     cfgcg.first    = &ccc0;
 
@@ -354,13 +457,13 @@ static void cfg_open(void)
     cfgwin.flags    = WIN_TITLE | WIN_CENTERED | WIN_NOTTASKBAR;
     cfgwin.pid      = _sympid;
     cfgwin.w        = 208;
-    cfgwin.h        = 62;
+    cfgwin.h        = 74;
     cfgwin.wfull    = 208;
-    cfgwin.hfull    = 62;
+    cfgwin.hfull    = 74;
     cfgwin.wmin     = 208;
-    cfgwin.hmin     = 62;
+    cfgwin.hmin     = 74;
     cfgwin.wmax     = 208;
-    cfgwin.hmax     = 62;
+    cfgwin.hmax     = 74;
     cfgwin.title    = cfg_title;
     cfgwin.controls = &cfgcg;
 
@@ -378,6 +481,7 @@ static void cfg_ok(void)
 {
     cfgdat[4] = tmp_density;
     cfgdat[5] = tmp_speed;
+    cfgdat[6] = tmp_glyphset;
     cfg_close();
 
     if (cfg_prz) {
@@ -426,15 +530,26 @@ void start_animation(void)
 {
     signed char   wid;
     unsigned char tick, density, speed, idle_skip, burst, b;
+    unsigned char glyph_set, glyph_base, nglyphs;
     unsigned short mx0, my0;
     unsigned short resp;
     unsigned int  i;
 
-    density = (unsigned char)cfgdat[4];
-    speed   = (unsigned char)cfgdat[5];
+    density   = (unsigned char)cfgdat[4];
+    speed     = (unsigned char)cfgdat[5];
+    glyph_set = (unsigned char)cfgdat[6];
 
-    if (density < 1 || density > 3) density = 2;
-    if (speed   < 1 || speed   > 3) speed   = 2;
+    if (density   < 1 || density   > 3) density   = 2;
+    if (speed     < 1 || speed     > 3) speed     = 2;
+    if (glyph_set < 1 || glyph_set > 2) glyph_set = 1;
+
+    if (glyph_set == 2) {
+        glyph_base = NGLYPHS_BINARY;
+        nglyphs    = NGLYPHS_HANA;
+    } else {
+        glyph_base = 0;
+        nglyphs    = NGLYPHS_BINARY;
+    }
 
     // idle_skip: idles to wait between ticks (for slow speeds)
     // burst: anim_ticks to run per idle (for fast speeds)
@@ -525,7 +640,7 @@ void start_animation(void)
         if (++tick >= idle_skip) {
             tick = 0;
             for (b = 0; b < burst; b++)
-                anim_tick(density, speed);
+                anim_tick(density, speed, glyph_base, nglyphs);
         }
 
         Idle();
