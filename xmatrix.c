@@ -380,7 +380,8 @@ static void anim_tick(unsigned char density, unsigned char speed,
 // -----------------------------------------------------------------------
 
 // cfgdat[0..3] = "MATX" magic; [4] = density (1-3); [5] = speed (1-3); [6] = glyphset (1=binary, 2=hana)
-_transfer char cfgdat[7]           = { 'M', 'A', 'T', 'X', 2, 2, 1 };
+// Must be exactly 64 bytes: the desktop manager reads/writes a fixed 64-byte config block.
+_transfer char cfgdat[64]          = { 'M', 'A', 'T', 'X', 2, 2, 1 };
 _transfer char tmp_density         = 2;
 _transfer char tmp_speed           = 2;
 _transfer char tmp_glyphset        = 1;
@@ -655,7 +656,7 @@ int main(int argc, char *argv[])
 {
     unsigned short resp;
     unsigned char  got_msg, sender, b;
-    char           init_tmp[6];
+    char           init_tmp[64];
 
     got_msg = 0;
     sender  = 0;
@@ -687,11 +688,10 @@ int main(int argc, char *argv[])
                 (unsigned char)_symmsg[1],
                 (char *)((unsigned short)((unsigned char)_symmsg[3] << 8)
                          | (unsigned char)_symmsg[2]),
-                6u);
+                64u);
             if (init_tmp[0] == 'M' && init_tmp[1] == 'A' &&
                 init_tmp[2] == 'T' && init_tmp[3] == 'X') {
-                cfgdat[4] = init_tmp[4];
-                cfgdat[5] = init_tmp[5];
+                memcpy(cfgdat, init_tmp, 64);
             }
             break;
 
