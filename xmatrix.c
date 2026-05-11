@@ -7,13 +7,14 @@
 //   bit3=p0_hi  bit2=p1_hi  bit1=p2_hi  bit0=p3_hi
 //
 // SymbOS default Mode 1 palette: ink1 = black (background).
-//   bg (ink1)  : lo=1, hi=0  ->  0xF0 per 4-pixel byte
-//   dim (ink2) : lo=0, hi=1  ->  0x0F per 4-pixel byte
-//   bright (ink3): lo=1, hi=1 -> 0xFF per 4-pixel byte
+//   white (ink0): lo=0, hi=0  ->  0x00 per 4-pixel byte
+//   bg    (ink1): lo=1, hi=0  ->  0xF0 per 4-pixel byte
+//   dim   (ink2): lo=0, hi=1  ->  0x0F per 4-pixel byte
+//   bright(ink3): lo=1, hi=1  ->  0xFF per 4-pixel byte
 //
-// Font encoding (src = 8-pixel row, 1 bit per pixel):
-//   hi = (src>>4)&0x0F  (pixels 0-3)   lo = src&0x0F  (pixels 4-7)
-//   bright byte: 0xF0 | nibble          (bg=ink1, fg=ink3)
+// Font encoding (nibble = 4-pixel foreground mask):
+//   white  byte: (~nibble&0x0F)<<4        (bg=ink1, fg=ink0)
+//   bright byte: 0xF0 | nibble            (bg=ink1, fg=ink3)
 //   dim    byte: ((~nibble&0x0F)<<4)|nibble  (bg=ink1, fg=ink2)
 
 #include <symbos.h>
@@ -32,7 +33,8 @@
 #define GRID_W    40        /* 320 / 8 */
 #define GRID_H    25        /* 200 / 8 */
 #define NGLYPHS   2
-#define GLOW_MAX  4         /* frames a new char stays bright */
+#define GLOW_MAX   6        /* total glow frames on new char */
+#define GLOW_WHITE 3        /* glow > GLOW_WHITE -> white, else bright */
 
 // -----------------------------------------------------------------------
 // 8x8 font source bitmaps: '.' = background, '#' = foreground pixel
@@ -62,6 +64,7 @@ static const char *font_art[NGLYPHS][8] = {
 };
 
 // Pre-encoded Mode 1 font: flat arrays, 16 bytes per glyph (8 rows * 2 bytes)
+_data unsigned char font_white[NGLYPHS * 16];  /* fg=ink0, bg=ink1 */
 _data unsigned char font_bright[NGLYPHS * 16]; /* fg=ink3, bg=ink1 */
 _data unsigned char font_dim[NGLYPHS * 16];    /* fg=ink2, bg=ink1 */
 
@@ -117,6 +120,9 @@ static void build_font(void)
             if (row[6] == '#') lo |= 0x02;
             if (row[7] == '#') lo |= 0x01;
 
+            font_white[g * 16 + r * 2 + 0]  = (unsigned char)((~hi & 0x0F) << 4);
+            font_white[g * 16 + r * 2 + 1]  = (unsigned char)((~lo & 0x0F) << 4);
+
             font_bright[g * 16 + r * 2 + 0] = 0xF0 | hi;
             font_bright[g * 16 + r * 2 + 1] = 0xF0 | lo;
 
@@ -161,13 +167,13 @@ static void mx_clear_screen(void)
 // Draw or erase one 8x8 character cell at grid position (cx, cy).
 // Each of the 8 scanlines is 0x800 bytes apart in VRAM.
 static void draw_cell(unsigned char cx, unsigned char cy,
-                      unsigned char gidx, unsigned char bright)
+                      unsigned char gidx, unsigned char color)
 {
     unsigned char *fnt;
     unsigned short base;
     unsigned char r;
 
-    fnt  = (bright ? font_bright : font_dim) + gidx * 16;
+    fnt  = (color == 2 ? font_white : color == 1 ? font_bright : font_dim) + gidx * 16;
     base = row_base[cy] + (unsigned short)cx * 2u;
 
     for (r = 0; r < 8; r++) {
@@ -267,7 +273,8 @@ static void anim_tick(unsigned char density)
             if (!c->glyph) {
                 erase_cell(x, y);
             } else {
-                draw_cell(x, y, c->glyph - 1u, c->glow > 0 ? 1 : 0);
+                draw_cell(x, y, c->glyph - 1u,
+                    c->glow > GLOW_WHITE ? 2 : c->glow > 0 ? 1 : 0);
             }
         }
     }
