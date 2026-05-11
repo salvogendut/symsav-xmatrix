@@ -403,7 +403,7 @@ _transfer Ctrl_Radio cfg_rad_s1    = { &tmp_speed,    "Slow",   (COLOR_BLACK<<2)
 _transfer Ctrl_Radio cfg_rad_s2    = { &tmp_speed,    "Normal", (COLOR_BLACK<<2)|COLOR_ORANGE, 2, rg_speed    };
 _transfer Ctrl_Radio cfg_rad_s3    = { &tmp_speed,    "Fast",   (COLOR_BLACK<<2)|COLOR_ORANGE, 3, rg_speed    };
 _transfer Ctrl_Radio cfg_rad_g1    = { &tmp_glyphset, "Binary", (COLOR_BLACK<<2)|COLOR_ORANGE, 1, rg_glyphset };
-_transfer Ctrl_Radio cfg_rad_g2    = { &tmp_glyphset, "Hana",   (COLOR_BLACK<<2)|COLOR_ORANGE, 2, rg_glyphset };
+_transfer Ctrl_Radio cfg_rad_g2    = { &tmp_glyphset, "Kana",   (COLOR_BLACK<<2)|COLOR_ORANGE, 2, rg_glyphset };
 
 _transfer Ctrl ccc0  = { 0,  C_AREA,   -1, COLOR_ORANGE,                    0,  0, 208, 74, 0 };
 _transfer Ctrl ccc1  = { 0,  C_TFRAME, -1, (unsigned short)&cfg_tf,         2,  1, 204, 50, 0 };
