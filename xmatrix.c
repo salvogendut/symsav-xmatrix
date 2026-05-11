@@ -201,7 +201,7 @@ static void erase_cell(unsigned char cx, unsigned char cy)
 // Animation tick
 // -----------------------------------------------------------------------
 
-static void anim_tick(unsigned char density)
+static void anim_tick(unsigned char density, unsigned char speed)
 {
     unsigned int idx;
     unsigned char x;
@@ -248,7 +248,8 @@ static void anim_tick(unsigned char density)
     for (idx = 0; idx < (unsigned int)GRID_W * GRID_H; idx++, c++) {
         if (c->glyph && c->glow > 0) {
             c->glow--;
-            c->dirty = 1;
+            if (c->glow == GLOW_WHITE || c->glow == 0)
+                c->dirty = 1;
         }
     }
 
@@ -261,7 +262,7 @@ static void anim_tick(unsigned char density)
         if (f->y >= 0) continue;
         f->y         = (signed char)(rand() % (GRID_H / 3));
         f->remaining = 5 + (unsigned char)(rand() % (GRID_H - 5));
-        f->throttle  = (unsigned char)(rand() % 8);
+        f->throttle  = (speed >= 3) ? 0 : (speed == 2) ? (unsigned char)(rand() % 4) : (unsigned char)(rand() % 8);
     }
 
     // --- Render dirty cells ---
@@ -424,7 +425,7 @@ static void desktop_cont(void)
 void start_animation(void)
 {
     signed char   wid;
-    unsigned char tick, density, speed, frame_skip;
+    unsigned char tick, density, speed, idle_skip, burst, b;
     unsigned short mx0, my0;
     unsigned short resp;
     unsigned int  i;
@@ -435,8 +436,10 @@ void start_animation(void)
     if (density < 1 || density > 3) density = 2;
     if (speed   < 1 || speed   > 3) speed   = 2;
 
-    // speed 1=slow(6), 2=normal(3), 3=fast(1)
-    frame_skip = (speed == 1) ? 6 : (speed == 3) ? 1 : 3;
+    // idle_skip: idles to wait between ticks (for slow speeds)
+    // burst: anim_ticks to run per idle (for fast speeds)
+    idle_skip = (speed == 1) ? 6 : 1;
+    burst     = (speed == 3) ? 3 : 1;
 
     srand((unsigned int)Sys_Counter());
 
@@ -519,9 +522,10 @@ void start_animation(void)
             }
         }
 
-        if (++tick >= frame_skip) {
+        if (++tick >= idle_skip) {
             tick = 0;
-            anim_tick(density);
+            for (b = 0; b < burst; b++)
+                anim_tick(density, speed);
         }
 
         Idle();
