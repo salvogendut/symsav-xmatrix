@@ -379,8 +379,9 @@ static void anim_tick(unsigned char density, unsigned char speed,
 // Config data and dialog
 // -----------------------------------------------------------------------
 
-// cfgdat[0..3] = "MATX" magic; [4] = density (1-3); [5] = speed (1-3); [6] = glyphset (1=binary, 2=hana)
-_transfer char cfgdat[7]           = { 'M', 'A', 'T', 'X', 2, 2, 1 };
+// cfgdat[0..3] = "MATX" magic; [4] = density (1-3); [5] = speed (1-3); [6] = glyphset (1=binary, 2=kana)
+// _data not _transfer: transfer area (0xC000+) is shared physical RAM; cross-bank Bank_Copy from it reads the wrong process's data
+_data char cfgdat[7]               = { 'M', 'A', 'T', 'X', 2, 2, 1 };
 _transfer char tmp_density         = 2;
 _transfer char tmp_speed           = 2;
 _transfer char tmp_glyphset        = 1;
@@ -439,9 +440,9 @@ static void cfg_open(void)
 {
     if (cfgwin_id >= 0) return;
 
-    tmp_density   = cfgdat[4];
-    tmp_speed     = cfgdat[5];
-    tmp_glyphset  = cfgdat[6];
+    tmp_density  = cfgdat[4];
+    tmp_speed    = cfgdat[5];
+    tmp_glyphset = cfgdat[6];
 
     rg_density[0]  = rg_density[1]  = rg_density[2]  = rg_density[3]  = -1;
     rg_speed[0]    = rg_speed[1]    = rg_speed[2]    = rg_speed[3]    = -1;
@@ -655,7 +656,7 @@ int main(int argc, char *argv[])
 {
     unsigned short resp;
     unsigned char  got_msg, sender, b;
-    char           init_tmp[6];
+    char           init_tmp[7];
 
     got_msg = 0;
     sender  = 0;
@@ -687,11 +688,12 @@ int main(int argc, char *argv[])
                 (unsigned char)_symmsg[1],
                 (char *)((unsigned short)((unsigned char)_symmsg[3] << 8)
                          | (unsigned char)_symmsg[2]),
-                6u);
+                7u);
             if (init_tmp[0] == 'M' && init_tmp[1] == 'A' &&
                 init_tmp[2] == 'T' && init_tmp[3] == 'X') {
                 cfgdat[4] = init_tmp[4];
                 cfgdat[5] = init_tmp[5];
+                cfgdat[6] = init_tmp[6];
             }
             break;
 

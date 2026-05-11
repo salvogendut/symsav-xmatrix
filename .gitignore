@@ -1,2 +1,3 @@
 *.o
 xscreensaver/
+serve.py
