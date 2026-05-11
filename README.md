@@ -1,3 +1,5 @@
+![Example Image](symbos-xmatrix.png)
+
 # symsav-xmatrix
 
 A Matrix-style falling character screensaver for [SymbOS](https://www.symbos.org/) on the Amstrad CPC.
