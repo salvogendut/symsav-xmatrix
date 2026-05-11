@@ -61,9 +61,9 @@ static const char *font_art[NGLYPHS][8] = {
     },
 };
 
-// Pre-encoded Mode 1 font: 2 variants * NGLYPHS * 8 rows * 2 bytes
-_data unsigned char font_bright[NGLYPHS][8][2]; /* fg=ink3, bg=ink1 */
-_data unsigned char font_dim[NGLYPHS][8][2];    /* fg=ink2, bg=ink1 */
+// Pre-encoded Mode 1 font: flat arrays, 16 bytes per glyph (8 rows * 2 bytes)
+_data unsigned char font_bright[NGLYPHS * 16]; /* fg=ink3, bg=ink1 */
+_data unsigned char font_dim[NGLYPHS * 16];    /* fg=ink2, bg=ink1 */
 
 // Screen clear buffer: one CPC character plane (25 rows * 80 bytes = 2000)
 // filled with 0xF0 = ink1 (black) for all 4 pixels per byte
@@ -117,17 +117,11 @@ static void build_font(void)
             if (row[6] == '#') lo |= 0x02;
             if (row[7] == '#') lo |= 0x01;
 
-            // bright: fg=ink3 (lo=1,hi=1), bg=ink1 (lo=1,hi=0)
-            // Upper nibble: all pixels have lo=1 -> always 0xF0
-            // Lower nibble: only fg pixels have hi=1 -> nibble value
-            font_bright[g][r][0] = 0xF0 | hi;
-            font_bright[g][r][1] = 0xF0 | lo;
+            font_bright[g * 16 + r * 2 + 0] = 0xF0 | hi;
+            font_bright[g * 16 + r * 2 + 1] = 0xF0 | lo;
 
-            // dim: fg=ink2 (lo=0,hi=1), bg=ink1 (lo=1,hi=0)
-            // Upper nibble: background pixels (where src bit=0) -> (~nibble)<<4
-            // Lower nibble: foreground pixels (where src bit=1) -> nibble
-            font_dim[g][r][0] = ((unsigned char)(~hi & 0x0F) << 4) | hi;
-            font_dim[g][r][1] = ((unsigned char)(~lo & 0x0F) << 4) | lo;
+            font_dim[g * 16 + r * 2 + 0] = ((unsigned char)(~hi & 0x0F) << 4) | hi;
+            font_dim[g * 16 + r * 2 + 1] = ((unsigned char)(~lo & 0x0F) << 4) | lo;
         }
     }
 
@@ -169,17 +163,17 @@ static void mx_clear_screen(void)
 static void draw_cell(unsigned char cx, unsigned char cy,
                       unsigned char gidx, unsigned char bright)
 {
-    unsigned char (*fnt)[2];
+    unsigned char *fnt;
     unsigned short base;
     unsigned char r;
 
-    fnt  = bright ? font_bright[gidx] : font_dim[gidx];
+    fnt  = (bright ? font_bright : font_dim) + gidx * 16;
     base = row_base[cy] + (unsigned short)cx * 2u;
 
     for (r = 0; r < 8; r++) {
         Bank_Copy(0,
             (char *)(base + (unsigned short)r * 0x0800u),
-            _symbank, (char *)fnt[r], 2u);
+            _symbank, (char *)(fnt + r * 2), 2u);
     }
 }
 
