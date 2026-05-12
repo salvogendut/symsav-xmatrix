@@ -380,8 +380,10 @@ static void anim_tick(unsigned char density, unsigned char speed,
 // -----------------------------------------------------------------------
 
 // cfgdat[0..3] = "MATX" magic; [4] = density (1-3); [5] = speed (1-3); [6] = glyphset (1=binary, 2=hana)
-// Must be exactly 64 bytes: the desktop manager reads/writes a fixed 64-byte config block.
-_transfer char cfgdat[64]          = { 'M', 'A', 'T', 'X', 2, 2, 1 };
+// Must be in _data (app bank), NOT _transfer: the desktop reads it via bank-switching, and the
+// transfer segment is process-local — when the desktop is active, 0xC000 maps to *its own*
+// transfer RAM, so a transfer-segment address would produce zeros in SYMBOS.INI.
+_data char cfgdat[64];
 _transfer char tmp_density         = 2;
 _transfer char tmp_speed           = 2;
 _transfer char tmp_glyphset        = 1;
@@ -491,7 +493,7 @@ static void cfg_ok(void)
         _symmsg[1] = _symbank;
         _symmsg[2] = (char)((unsigned short)cfgdat & 0xFF);
         _symmsg[3] = (char)((unsigned short)cfgdat >> 8);
-        while (!Msg_Send(cfg_prz, _sympid, _symmsg));
+        while (!Msg_Send(_sympid, cfg_prz, _symmsg));
         cfg_prz = 0;
     }
 }
@@ -657,6 +659,10 @@ int main(int argc, char *argv[])
 {
     unsigned short resp;
     unsigned char  got_msg, sender, b;
+
+    /* _data vars are not statically initialised by SCC — set defaults explicitly */
+    cfgdat[0] = 'M'; cfgdat[1] = 'A'; cfgdat[2] = 'T'; cfgdat[3] = 'X';
+    cfgdat[4] = 2;   cfgdat[5] = 2;   cfgdat[6] = 1;
 
     got_msg = 0;
     sender  = 0;
