@@ -10,18 +10,6 @@ Inspired by Jamie Zawinski's [xmatrix](https://www.jwz.org/xscreensaver/) from t
 
 ---
 
-## Installing
-
-1. Copy `xmatrix.sav` into your `C:\SYMBOS\` directory.
-2. Open **Display Properties** and go to the **Screen Saver** tab.
-3. Click **Browse** and select `xmatrix.sav`.
-4. Click **Setup** to configure the effect:
-   - **Style**: Binary (`0`/`1` digits) or Kana (Katakana-style glyphs)
-   - **Density**: Sparse / Normal / Dense — how many column streams activate per frame
-   - **Speed**: Slow / Normal / Fast — how quickly the columns scroll
-
----
-
 ## Building
 
 ```bash
@@ -36,6 +24,18 @@ Build steps:
 2. `add_preview.py` patches the preview thumbnail into the binary at file offset 256
 
 Output: `xmatrix.sav`
+
+---
+
+## Installing
+
+1. Copy `xmatrix.sav` into your `C:\SYMBOS\` directory.
+2. Open **Display Properties** and go to the **Screen Saver** tab.
+3. Click **Browse** and select `xmatrix.sav`.
+4. Click **Setup** to configure the effect:
+   - **Style**: Binary (`0`/`1` digits) or Kana (Katakana-style glyphs)
+   - **Density**: Sparse / Normal / Dense — how many column streams activate per frame
+   - **Speed**: Slow / Normal / Fast — controls the frame skip (6 / 3 / 1 idle ticks between frames)
 
 ---
 
@@ -61,16 +61,7 @@ Standard SymbOS screensaver messages:
 | `MSC_SAV_CONFIG` (3) | Open config dialog |
 | `MSR_SAV_CONFIG` (4) | Send updated config back |
 
-Config is 6 bytes: magic `"MATX"` + density byte + speed byte.
-
----
-
-## Configuration
-
-| Setting | Options |
-|---------|---------|
-| Density | Sparse / Normal / Dense — controls how many column streams activate per frame |
-| Speed | Slow / Normal / Fast — controls the frame skip (6 / 3 / 1 idle ticks between frames) |
+Config is 6 bytes: magic `"MATX"` + style byte + density byte + speed byte.
 
 ---
 
