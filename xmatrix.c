@@ -425,7 +425,7 @@ _transfer Ctrl ccc14 = { 0,  C_RADIO,  -1, (unsigned short)&cfg_rad_g2,   106, 3
 _transfer Ctrl_Group cfgcg;
 _transfer Window     cfgwin;
 _transfer char       cfg_title[7] = { 'M', 'a', 't', 'r', 'i', 'x', 0 };
-_transfer char       init_tmp[64];
+_data     char       init_tmp[64]; /* must be _data, not _transfer: Bank_Copy dest must be in app bank */
 
 // Animation window (minimal fullscreen)
 _transfer Ctrl       anim_ctrl[1];
