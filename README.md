@@ -10,6 +10,18 @@ Inspired by Jamie Zawinski's [xmatrix](https://www.jwz.org/xscreensaver/) from t
 
 ---
 
+## Installing
+
+1. Copy `xmatrix.sav` into your `C:\SYMBOS\` directory.
+2. Open **Display Properties** and go to the **Screen Saver** tab.
+3. Click **Browse** and select `xmatrix.sav`.
+4. Click **Setup** to configure the effect:
+   - **Style**: Binary (`0`/`1` digits) or Kana (Katakana-style glyphs)
+   - **Density**: Sparse / Normal / Dense — how many column streams activate per frame
+   - **Speed**: Slow / Normal / Fast — how quickly the columns scroll
+
+---
+
 ## Building
 
 ```bash
