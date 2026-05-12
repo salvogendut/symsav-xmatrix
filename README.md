@@ -2,11 +2,9 @@
 
 # symsav-xmatrix
 
-> **Work in progress** — saving settings does not currently work.
-
 A Matrix-style falling character screensaver for [SymbOS](https://www.symbos.org/) on the Amstrad CPC.
 
-> **Requires Mode 1** — this screensaver only works in 320×200 Mode 1 (4 colours). Running it in any other screen mode will produce incorrect output.
+> **Requires Mode 1** — this screensaver only works in 320×200 Mode 1 (4 colours). Running it in any other screen mode will produce incorrect output for now
 
 Inspired by Jamie Zawinski's [xmatrix](https://www.jwz.org/xscreensaver/) from the xscreensaver suite.
 
