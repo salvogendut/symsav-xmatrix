@@ -1,4 +1,4 @@
-![Example Image](symbos-xmatrix.png)
+![Example Image](xmatrix.png)
 
 # symsav-xmatrix
 
