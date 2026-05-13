@@ -44,7 +44,9 @@ Output: `xmatrix.sav`
 - 40×25 grid of 8×8 pixel characters on the 320×200 CPC Mode 1 screen
 - Columns of random characters fall from the top; each new character glows bright, then fades to dim
 - Uses SymbOS default palette: bright (ink 3) for the leading character, dim (ink 2) for the trail, black (ink 1) for the background
-- 2-glyph character set: binary digits `0` and `1`
+- Two selectable glyph sets:
+  - **Binary**: digits `0` and `1` (2 glyphs)
+  - **Kana**: 9 Katakana characters — エ (e), コ (ko), ス (su), ト (to), ネ (ne), ク (ku), ロ (ro), モ (mo), ツ (tsu)
 
 Glyphs are defined as ASCII art strings in `xmatrix.c` (same convention as [symsav-xroach](https://github.com/salvogendut/symsav-xroach) sprites) and encoded into flat Mode 1 byte arrays at startup by `build_font()`.
 
