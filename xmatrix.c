@@ -43,14 +43,18 @@
 #define NGLYPHS_BINARY 2
 #define NGLYPHS_HANA   9
 #define NGLYPHS_TOTAL  11
-#define GLOW_MAX   6        /* total glow frames on new char */
-#define GLOW_WHITE 3        /* glow > GLOW_WHITE -> white, else bright */
+#define GLOW_MAX   8        /* glow frames on new char */
+#define GLOW_WHITE 5        /* glow > GLOW_WHITE -> white  (3 frames: 8,7,6) */
+#define GLOW_GLOW  3        /* glow > GLOW_GLOW  -> glow   (2 frames: 5,4)   */
+                            /* glow > 0          -> bright (3 frames: 3,2,1) */
+                            /* glow == 0         -> dim    (permanent)        */
 
 // MSX palette ink values (4-bit nibble)
-#define MSX_BG     0x1      /* black  */
-#define MSX_DIM    0x2      /* medium green */
-#define MSX_BRIGHT 0x3      /* light green */
-#define MSX_WHITE  0xF      /* white */
+#define MSX_BG     0x1      /* black         */
+#define MSX_DIM    0x2      /* medium green  */
+#define MSX_BRIGHT 0x3      /* light green   */
+#define MSX_GLOW   0xE      /* gray (#CCCCCC) — cooling step before white */
+#define MSX_WHITE  0xF      /* white         */
 
 // -----------------------------------------------------------------------
 // 8x8 font source bitmaps: '.' = background, '#' = foreground pixel
@@ -175,9 +179,10 @@ _data unsigned char font_bright[NGLYPHS_TOTAL * 16];  /* fg=ink3, bg=ink1 */
 _data unsigned char font_dim[NGLYPHS_TOTAL * 16];     /* fg=ink2, bg=ink1 */
 
 // MSX pre-encoded font: 32 bytes per glyph (8 rows × 4 bytes, 4bpp nibble)
-_data unsigned char font_white_msx[NGLYPHS_TOTAL * 32];
-_data unsigned char font_bright_msx[NGLYPHS_TOTAL * 32];
-_data unsigned char font_dim_msx[NGLYPHS_TOTAL * 32];
+_data unsigned char font_white_msx[NGLYPHS_TOTAL * 32];   /* ink15 white */
+_data unsigned char font_glow_msx[NGLYPHS_TOTAL * 32];    /* ink14 gray  */
+_data unsigned char font_bright_msx[NGLYPHS_TOTAL * 32];  /* ink3  light green */
+_data unsigned char font_dim_msx[NGLYPHS_TOTAL * 32];     /* ink2  medium green */
 
 // CPC screen clear buffer: one scanline plane (25 rows × 80 bytes = 2000)
 _data unsigned char zero_plane[2000];
@@ -213,6 +218,10 @@ _transfer char is_msx = 0;
 // VDP functions in xmatrix_msx.s
 extern void vdp_write(unsigned int vram_addr, char* src, unsigned short len);
 extern void vdp_fill(unsigned int vram_addr, unsigned char fill_byte, unsigned short len);
+extern void vdp_write_char(unsigned int vram_addr, char* src);
+extern void vdp_erase_char(unsigned int vram_addr);
+extern void cpc_write_char(unsigned short base_addr, char* src);
+extern void cpc_erase_char(unsigned short base_addr);
 
 // -----------------------------------------------------------------------
 // Font and buffer initialisation
@@ -256,6 +265,8 @@ static void build_font(void)
                     (lp ? MSX_DIM    : MSX_BG) << 4 | (rp ? MSX_DIM    : MSX_BG);
                 font_bright_msx[g * 32 + r * 4 + b] =
                     (lp ? MSX_BRIGHT : MSX_BG) << 4 | (rp ? MSX_BRIGHT : MSX_BG);
+                font_glow_msx[g * 32 + r * 4 + b] =
+                    (lp ? MSX_GLOW   : MSX_BG) << 4 | (rp ? MSX_GLOW   : MSX_BG);
                 font_white_msx[g * 32 + r * 4 + b] =
                     (lp ? MSX_WHITE  : MSX_BG) << 4 | (rp ? MSX_WHITE  : MSX_BG);
             }
@@ -308,27 +319,19 @@ static void draw_cell(unsigned char cx, unsigned char cy,
     unsigned char *fnt;
     unsigned short base_cpc;
     unsigned int   base_msx;
-    unsigned char  r;
 
     if (is_msx) {
-        fnt = (color == 2 ? font_white_msx
-                          : color == 1 ? font_bright_msx : font_dim_msx)
+        fnt = (color == 3 ? font_white_msx
+             : color == 2 ? font_glow_msx
+             : color == 1 ? font_bright_msx : font_dim_msx)
               + (unsigned int)gidx * 32u;
-        base_msx = (unsigned int)cy * 2048u;   /* cy * 8 * 256 */
-        for (r = 0; r < 8; r++) {
-            vdp_write(base_msx + (unsigned int)r * 256u + (unsigned int)cx * 4u,
-                      (char *)(fnt + r * 4), 4u);
-        }
+        base_msx = (unsigned int)cy * 2048u + (unsigned int)cx * 4u;
+        vdp_write_char(base_msx, (char *)fnt);
     } else {
-        fnt = (color == 2 ? font_white
-                          : color == 1 ? font_bright : font_dim)
+        fnt = (color >= 2 ? font_white : color == 1 ? font_bright : font_dim)
               + gidx * 16;
         base_cpc = row_base[cy] + (unsigned short)cx * 2u;
-        for (r = 0; r < 8; r++) {
-            Bank_Copy(0,
-                (char *)(base_cpc + (unsigned short)r * 0x0800u),
-                _symbank, (char *)(fnt + r * 2), 2u);
-        }
+        cpc_write_char(base_cpc, (char *)fnt);
     }
 }
 
@@ -336,21 +339,13 @@ static void erase_cell(unsigned char cx, unsigned char cy)
 {
     unsigned short base_cpc;
     unsigned int   base_msx;
-    unsigned char  r;
 
     if (is_msx) {
-        base_msx = (unsigned int)cy * 2048u;
-        for (r = 0; r < 8; r++) {
-            vdp_fill(base_msx + (unsigned int)r * 256u + (unsigned int)cx * 4u,
-                     0x11u, 4u);
-        }
+        base_msx = (unsigned int)cy * 2048u + (unsigned int)cx * 4u;
+        vdp_erase_char(base_msx);
     } else {
         base_cpc = row_base[cy] + (unsigned short)cx * 2u;
-        for (r = 0; r < 8; r++) {
-            Bank_Copy(0,
-                (char *)(base_cpc + (unsigned short)r * 0x0800u),
-                _symbank, (char *)bg_row, 2u);
-        }
+        cpc_erase_char(base_cpc);
     }
 }
 
@@ -407,7 +402,7 @@ static void anim_tick(unsigned char density, unsigned char speed,
     for (idx = 0; idx < (unsigned int)grid_w * grid_h; idx++, c++) {
         if (c->glyph && c->glow > 0) {
             c->glow--;
-            if (c->glow == GLOW_WHITE || c->glow == 0)
+            if (c->glow == GLOW_WHITE || c->glow == GLOW_GLOW || c->glow == 0)
                 c->dirty = 1;
         }
     }
@@ -433,7 +428,9 @@ static void anim_tick(unsigned char density, unsigned char speed,
                 erase_cell(x, y);
             } else {
                 draw_cell(x, y, c->glyph - 1u,
-                    c->glow > GLOW_WHITE ? 2 : c->glow > 0 ? 1 : 0);
+                    c->glow > GLOW_WHITE ? 3 :
+                    c->glow > GLOW_GLOW  ? 2 :
+                    c->glow > 0          ? 1 : 0);
             }
         }
     }
