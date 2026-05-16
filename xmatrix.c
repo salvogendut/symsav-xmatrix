@@ -358,11 +358,14 @@ static void anim_tick(unsigned char density, unsigned char speed,
                       unsigned char grid_w, unsigned char grid_h)
 {
     unsigned int idx;
+    unsigned int total_cells;
     unsigned char x;
     unsigned char y;
     Cell   *c;
     Feeder *f;
     unsigned char new_feeders;
+
+    total_cells = (unsigned int)grid_w * grid_h;
 
     // --- Advance feeders ---
     for (x = 0; x < grid_w; x++) {
@@ -399,7 +402,7 @@ static void anim_tick(unsigned char density, unsigned char speed,
 
     // --- Glow decay ---
     c = cells;
-    for (idx = 0; idx < (unsigned int)grid_w * grid_h; idx++, c++) {
+    for (idx = 0; idx < total_cells; idx++, c++) {
         if (c->glyph && c->glow > 0) {
             c->glow--;
             if (c->glow == GLOW_WHITE || c->glow == GLOW_GLOW || c->glow == 0)
