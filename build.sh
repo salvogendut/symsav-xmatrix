@@ -3,7 +3,7 @@
 
 SCC="${SCC:-../scc/bin/cc}"
 
-"$SCC" xmatrix.c \
+"$SCC" xmatrix.c xmatrix_msx.s \
     -N "Matrix" \
     -o xmatrix.sav \
     -h 512 \
