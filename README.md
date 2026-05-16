@@ -2,11 +2,9 @@
 
 # symsav-xmatrix
 
-A Matrix-style falling character screensaver for [SymbOS](https://www.symbos.org/) on the Amstrad CPC.
+A Matrix-style falling character screensaver for [SymbOS](https://www.symbos.org/) on the Amstrad CPC and MSX.
 
 > **Alpha version — use at your own risk.** This software is in an early alpha state and may cause harm to your system. If you choose to try it, you do so entirely at your own risk.
-
-> **Requires Mode 1** — this screensaver only works in 320×200 Mode 1 (4 colours). Running it in any other screen mode will produce incorrect output for now
 
 Inspired by Jamie Zawinski's [xmatrix](https://www.jwz.org/xscreensaver/) from the xscreensaver suite.
 
@@ -22,10 +20,10 @@ Requires the SCC compiler (set `SCC=` env var if not at `../scc/bin/cc`) and Pyt
 
 Build steps:
 
-1. SCC compiles `xmatrix.c` → `xmatrix.sav`
+1. SCC compiles `xmatrix.c` + `xmatrix_msx.s` → `xmatrix.sav`
 2. `add_preview.py` patches the preview thumbnail into the binary at file offset 256
 
-Output: `xmatrix.sav`
+Output: `xmatrix.sav` — a single binary that runs on both CPC and MSX.
 
 ---
 
@@ -43,14 +41,28 @@ Output: `xmatrix.sav`
 
 ## Effect
 
-- 40×25 grid of 8×8 pixel characters on the 320×200 CPC Mode 1 screen
-- Columns of random characters fall from the top; each new character glows bright, then fades to dim
-- Uses SymbOS default palette: bright (ink 3) for the leading character, dim (ink 2) for the trail, black (ink 1) for the background
+The screensaver adapts automatically to the platform it runs on:
+
+### Amstrad CPC
+
+- 40×25 grid of 8×8 pixel characters on the 320×200 Mode 1 screen (4 colours)
+- Trail colours: white (ink 0) → bright green (ink 3) → dim green (ink 2); background black (ink 1)
+
+### MSX
+
+- 64×26 grid of 8×8 pixel characters on the 512×212 Screen 7 (16 colours)
+- Trail colours: white → gray → light green → medium green; background black
+- Screen written directly via VDP ports (0x98/0x99) using V9938 Screen 7 4bpp nibble format
+
+### Both platforms
+
+- Columns of random characters fall from the top
+- Each new character glows through 4 colour stages as it ages, then settles to the dim trail colour
 - Two selectable glyph sets:
   - **Binary**: digits `0` and `1` (2 glyphs)
   - **Kana**: 9 Katakana characters — エ (e), コ (ko), ス (su), ト (to), ネ (ne), ク (ku), ロ (ro), モ (mo), ツ (tsu)
 
-Glyphs are defined as ASCII art strings in `xmatrix.c` (same convention as [symsav-xroach](https://github.com/salvogendut/symsav-xroach) sprites) and encoded into flat Mode 1 byte arrays at startup by `build_font()`.
+Glyphs are defined as ASCII art strings in `xmatrix.c` and encoded into platform-specific byte arrays at startup by `build_font()`.
 
 ---
 
@@ -71,16 +83,28 @@ Config is 6 bytes: magic `"MATX"` + style byte + density byte + speed byte.
 
 ## Animation
 
-Fullscreen rendering follows the same approach as [symsav-xroach](https://github.com/salvogendut/symsav-xroach):
+Platform is detected at runtime via `Sys_Type()`. The animation loop is the same on both platforms:
 
 1. Open a fullscreen `WIN_NOTTASKBAR | WIN_NOTMOVEABLE` window
 2. `DSK_SRV_DSKSTP` to freeze the desktop
-3. Clear all 8 CPC character planes via `Bank_Copy` to VRAM (bank 0)
+3. Clear the screen
 4. Per frame: advance column feeders, decay glow, redraw only dirty cells
 5. Exit on any key or mouse movement: resume desktop, close window, `Screen_Redraw()`
 
-Screen address formula for character cell (cx, cy), scanline row r:
+### CPC screen access
+
+Characters are written 8 scanlines at a time via `Bank_Copy` to screen bank 0. Scanline address for character cell (cx, cy), row r:
 
 ```
 addr = 0xC000 + cy*80 + cx*2 + r*0x800
 ```
+
+### MSX screen access
+
+Characters are written via direct VDP port I/O (`xmatrix_msx.s`). Screen 7 VRAM address for character cell (cx, cy), row r:
+
+```
+addr = cy*2048 + r*256 + cx*4
+```
+
+R#14 is set once per character draw (bits 15:14 of the base address). All 8 rows are written in a single assembly call to avoid repeated function call overhead.

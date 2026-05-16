@@ -1,21 +1,21 @@
-// xmatrix.c — Matrix screensaver for SymbOS
-// Falling-character effect modelled after Jamie Zawinski's xmatrix.
-// Renders directly to CPC Mode 1 VRAM via Bank_Copy; uses SymbOS default palette.
+// xmatrix.c — Matrix screensaver for SymbOS (CPC and MSX)
 //
-// CPC Mode 1 byte layout for 4 pixels p0..p3 (each ink 0-3):
+// CPC Mode 1 — 320×200, 4 colours, 2bpp packed with bit-shuffled layout:
 //   bit7=p0_lo  bit6=p1_lo  bit5=p2_lo  bit4=p3_lo
 //   bit3=p0_hi  bit2=p1_hi  bit1=p2_hi  bit0=p3_hi
+// SymbOS default Mode 1 palette: ink1=black, ink2=dim-green, ink3=bright-green.
+//   bg    (ink1): 0xF0 per 4-pixel byte
+//   dim   (ink2): 0x0F per 4-pixel byte
+//   bright(ink3): 0xFF per 4-pixel byte
+//   white (ink0): 0x00 per 4-pixel byte
+// CPC scanlines are 0x800 bytes apart; row_base[cy] = 0xC000 + cy*80.
 //
-// SymbOS default Mode 1 palette: ink1 = black (background).
-//   white (ink0): lo=0, hi=0  ->  0x00 per 4-pixel byte
-//   bg    (ink1): lo=1, hi=0  ->  0xF0 per 4-pixel byte
-//   dim   (ink2): lo=0, hi=1  ->  0x0F per 4-pixel byte
-//   bright(ink3): lo=1, hi=1  ->  0xFF per 4-pixel byte
-//
-// Font encoding (nibble = 4-pixel foreground mask):
-//   white  byte: (~nibble&0x0F)<<4        (bg=ink1, fg=ink0)
-//   bright byte: 0xF0 | nibble            (bg=ink1, fg=ink3)
-//   dim    byte: ((~nibble&0x0F)<<4)|nibble  (bg=ink1, fg=ink2)
+// MSX Screen 7 — 512×212, 16 colours, 4bpp nibble layout:
+//   high nibble = left pixel, low nibble = right pixel
+//   2 pixels per byte, 256 bytes per row (linear, no interleave).
+// VRAM written via VDP ports 0x98 (data) / 0x99 (address).
+// Using SymbOS default MSX palette: ink1=black, ink2=dim-green,
+//   ink3=bright-green, ink15=white.
 
 #include <symbos.h>
 #include <symbos/msgid.h>
@@ -28,15 +28,33 @@
 #define MSC_SAV_CONFIG 3
 #define MSR_SAV_CONFIG 4
 
-#define SCREEN_W  320
-#define SCREEN_H  200
-#define GRID_W    40        /* 320 / 8 */
-#define GRID_H    25        /* 200 / 8 */
+// CPC screen geometry
+#define SCREEN_W_CPC  320
+#define SCREEN_H_CPC  200
+#define GRID_W_CPC    40    /* 320 / 8 */
+#define GRID_H_CPC    25    /* 200 / 8 */
+
+// MSX Screen 7 geometry
+#define SCREEN_W_MSX  512
+#define SCREEN_H_MSX  212
+#define GRID_W_MSX    64    /* 512 / 8 */
+#define GRID_H_MSX    26    /* 212 / 8, last row partially visible */
+
 #define NGLYPHS_BINARY 2
 #define NGLYPHS_HANA   9
 #define NGLYPHS_TOTAL  11
-#define GLOW_MAX   6        /* total glow frames on new char */
-#define GLOW_WHITE 3        /* glow > GLOW_WHITE -> white, else bright */
+#define GLOW_MAX   8        /* glow frames on new char */
+#define GLOW_WHITE 5        /* glow > GLOW_WHITE -> white  (3 frames: 8,7,6) */
+#define GLOW_GLOW  3        /* glow > GLOW_GLOW  -> glow   (2 frames: 5,4)   */
+                            /* glow > 0          -> bright (3 frames: 3,2,1) */
+                            /* glow == 0         -> dim    (permanent)        */
+
+// MSX palette ink values (4-bit nibble)
+#define MSX_BG     0x1      /* black         */
+#define MSX_DIM    0x2      /* medium green  */
+#define MSX_BRIGHT 0x3      /* light green   */
+#define MSX_GLOW   0xE      /* gray (#CCCCCC) — cooling step before white */
+#define MSX_WHITE  0xF      /* white         */
 
 // -----------------------------------------------------------------------
 // 8x8 font source bitmaps: '.' = background, '#' = foreground pixel
@@ -155,20 +173,25 @@ static const char *font_art[NGLYPHS_TOTAL][8] = {
     },
 };
 
-// Pre-encoded Mode 1 font: flat arrays, 16 bytes per glyph (8 rows * 2 bytes)
-_data unsigned char font_white[NGLYPHS_TOTAL * 16];  /* fg=ink0, bg=ink1 */
-_data unsigned char font_bright[NGLYPHS_TOTAL * 16]; /* fg=ink3, bg=ink1 */
-_data unsigned char font_dim[NGLYPHS_TOTAL * 16];    /* fg=ink2, bg=ink1 */
+// CPC pre-encoded font: 16 bytes per glyph (8 rows × 2 bytes)
+_data unsigned char font_white[NGLYPHS_TOTAL * 16];   /* fg=ink0, bg=ink1 */
+_data unsigned char font_bright[NGLYPHS_TOTAL * 16];  /* fg=ink3, bg=ink1 */
+_data unsigned char font_dim[NGLYPHS_TOTAL * 16];     /* fg=ink2, bg=ink1 */
 
-// Screen clear buffer: one CPC character plane (25 rows * 80 bytes = 2000)
-// filled with 0xF0 = ink1 (black) for all 4 pixels per byte
+// MSX pre-encoded font: 32 bytes per glyph (8 rows × 4 bytes, 4bpp nibble)
+_data unsigned char font_white_msx[NGLYPHS_TOTAL * 32];   /* ink15 white */
+_data unsigned char font_glow_msx[NGLYPHS_TOTAL * 32];    /* ink14 gray  */
+_data unsigned char font_bright_msx[NGLYPHS_TOTAL * 32];  /* ink3  light green */
+_data unsigned char font_dim_msx[NGLYPHS_TOTAL * 32];     /* ink2  medium green */
+
+// CPC screen clear buffer: one scanline plane (25 rows × 80 bytes = 2000)
 _data unsigned char zero_plane[2000];
 
-// 2-byte clear for erasing one character column-pair
+// CPC 2-byte clear for erasing one character column-pair
 _data unsigned char bg_row[2]; /* { 0xF0, 0xF0 } */
 
 // -----------------------------------------------------------------------
-// Grid state
+// Grid state — sized for MSX (larger of the two grids)
 // -----------------------------------------------------------------------
 
 typedef struct {
@@ -183,11 +206,22 @@ typedef struct {
     unsigned char throttle; /* delay ticks before moving    */
 } Feeder;
 
-Cell   cells[GRID_W * GRID_H];
-Feeder feeders[GRID_W];
+Cell   cells[GRID_W_MSX * GRID_H_MSX];
+Feeder feeders[GRID_W_MSX];
 
-// Row base addresses: 0xC000 + cy*80  (precomputed to avoid multiply in loop)
-static unsigned short row_base[GRID_H];
+// CPC row base addresses (precomputed to avoid multiply in draw loop)
+static unsigned short row_base[GRID_H_MSX];
+
+// Platform flag: set at animation start via Sys_Type()
+_transfer char is_msx = 0;
+
+// VDP functions in xmatrix_msx.s
+extern void vdp_write(unsigned int vram_addr, char* src, unsigned short len);
+extern void vdp_fill(unsigned int vram_addr, unsigned char fill_byte, unsigned short len);
+extern void vdp_write_char(unsigned int vram_addr, char* src);
+extern void vdp_erase_char(unsigned int vram_addr);
+extern void cpc_write_char(unsigned short base_addr, char* src);
+extern void cpc_erase_char(unsigned short base_addr);
 
 // -----------------------------------------------------------------------
 // Font and buffer initialisation
@@ -195,12 +229,14 @@ static unsigned short row_base[GRID_H];
 
 static void build_font(void)
 {
-    unsigned char g, r, hi, lo;
+    unsigned char g, r, b, hi, lo, lp, rp;
     const char *row;
 
     for (g = 0; g < NGLYPHS_TOTAL; g++) {
         for (r = 0; r < 8; r++) {
             row = font_art[g][r];
+
+            // CPC Mode 1 encoding (2bpp, 4px per byte)
             hi = 0;
             if (row[0] == '#') hi |= 0x08;
             if (row[1] == '#') hi |= 0x04;
@@ -220,14 +256,29 @@ static void build_font(void)
 
             font_dim[g * 16 + r * 2 + 0] = ((unsigned char)(~hi & 0x0F) << 4) | hi;
             font_dim[g * 16 + r * 2 + 1] = ((unsigned char)(~lo & 0x0F) << 4) | lo;
+
+            // MSX 4bpp nibble encoding (2px per byte, high nibble = left px)
+            for (b = 0; b < 4; b++) {
+                lp = (row[b * 2]     == '#') ? 1 : 0;
+                rp = (row[b * 2 + 1] == '#') ? 1 : 0;
+                font_dim_msx[g * 32 + r * 4 + b] =
+                    (lp ? MSX_DIM    : MSX_BG) << 4 | (rp ? MSX_DIM    : MSX_BG);
+                font_bright_msx[g * 32 + r * 4 + b] =
+                    (lp ? MSX_BRIGHT : MSX_BG) << 4 | (rp ? MSX_BRIGHT : MSX_BG);
+                font_glow_msx[g * 32 + r * 4 + b] =
+                    (lp ? MSX_GLOW   : MSX_BG) << 4 | (rp ? MSX_GLOW   : MSX_BG);
+                font_white_msx[g * 32 + r * 4 + b] =
+                    (lp ? MSX_WHITE  : MSX_BG) << 4 | (rp ? MSX_WHITE  : MSX_BG);
+            }
         }
     }
 
-    for (r = 0; r < GRID_H; r++)
-        row_base[r] = 0xC000u + (unsigned short)r * 80u;
-
-    memset(zero_plane, 0xF0, sizeof(zero_plane));
-    bg_row[0] = bg_row[1] = 0xF0;
+    if (!is_msx) {
+        for (r = 0; r < GRID_H_CPC; r++)
+            row_base[r] = 0xC000u + (unsigned short)r * 80u;
+        memset(zero_plane, 0xF0, sizeof(zero_plane));
+        bg_row[0] = bg_row[1] = 0xF0;
+    }
 }
 
 // -----------------------------------------------------------------------
@@ -249,43 +300,52 @@ static unsigned char any_key_down(void)
 static void mx_clear_screen(void)
 {
     unsigned char k;
-    for (k = 0; k < 8; k++) {
-        Bank_Copy(0,
-            (char *)(0xC000u + (unsigned short)k * 0x0800u),
-            _symbank, (char *)zero_plane, 2000u);
+    if (is_msx) {
+        // 212 rows × 256 bytes/row = 54272 bytes, all ink1 pairs (0x11)
+        vdp_fill(0u, 0x11u, 54272u);
+    } else {
+        for (k = 0; k < 8; k++) {
+            Bank_Copy(0,
+                (char *)(0xC000u + (unsigned short)k * 0x0800u),
+                _symbank, (char *)zero_plane, 2000u);
+        }
     }
 }
 
-// Draw or erase one 8x8 character cell at grid position (cx, cy).
-// Each of the 8 scanlines is 0x800 bytes apart in VRAM.
+// Draw one 8×8 character cell at grid position (cx, cy).
 static void draw_cell(unsigned char cx, unsigned char cy,
                       unsigned char gidx, unsigned char color)
 {
     unsigned char *fnt;
-    unsigned short base;
-    unsigned char r;
+    unsigned short base_cpc;
+    unsigned int   base_msx;
 
-    fnt  = (color == 2 ? font_white : color == 1 ? font_bright : font_dim) + gidx * 16;
-    base = row_base[cy] + (unsigned short)cx * 2u;
-
-    for (r = 0; r < 8; r++) {
-        Bank_Copy(0,
-            (char *)(base + (unsigned short)r * 0x0800u),
-            _symbank, (char *)(fnt + r * 2), 2u);
+    if (is_msx) {
+        fnt = (color == 3 ? font_white_msx
+             : color == 2 ? font_glow_msx
+             : color == 1 ? font_bright_msx : font_dim_msx)
+              + (unsigned int)gidx * 32u;
+        base_msx = (unsigned int)cy * 2048u + (unsigned int)cx * 4u;
+        vdp_write_char(base_msx, (char *)fnt);
+    } else {
+        fnt = (color >= 2 ? font_white : color == 1 ? font_bright : font_dim)
+              + gidx * 16;
+        base_cpc = row_base[cy] + (unsigned short)cx * 2u;
+        cpc_write_char(base_cpc, (char *)fnt);
     }
 }
 
 static void erase_cell(unsigned char cx, unsigned char cy)
 {
-    unsigned short base;
-    unsigned char r;
+    unsigned short base_cpc;
+    unsigned int   base_msx;
 
-    base = row_base[cy] + (unsigned short)cx * 2u;
-
-    for (r = 0; r < 8; r++) {
-        Bank_Copy(0,
-            (char *)(base + (unsigned short)r * 0x0800u),
-            _symbank, (char *)bg_row, 2u);
+    if (is_msx) {
+        base_msx = (unsigned int)cy * 2048u + (unsigned int)cx * 4u;
+        vdp_erase_char(base_msx);
+    } else {
+        base_cpc = row_base[cy] + (unsigned short)cx * 2u;
+        cpc_erase_char(base_cpc);
     }
 }
 
@@ -294,17 +354,21 @@ static void erase_cell(unsigned char cx, unsigned char cy)
 // -----------------------------------------------------------------------
 
 static void anim_tick(unsigned char density, unsigned char speed,
-                      unsigned char glyph_base, unsigned char nglyphs)
+                      unsigned char glyph_base, unsigned char nglyphs,
+                      unsigned char grid_w, unsigned char grid_h)
 {
     unsigned int idx;
+    unsigned int total_cells;
     unsigned char x;
     unsigned char y;
     Cell   *c;
     Feeder *f;
     unsigned char new_feeders;
 
+    total_cells = (unsigned int)grid_w * grid_h;
+
     // --- Advance feeders ---
-    for (x = 0; x < GRID_W; x++) {
+    for (x = 0; x < grid_w; x++) {
         f = &feeders[x];
         if (f->y < 0) continue;
 
@@ -313,8 +377,8 @@ static void anim_tick(unsigned char density, unsigned char speed,
             continue;
         }
 
-        if ((unsigned char)f->y < GRID_H) {
-            c = &cells[(unsigned char)f->y * GRID_W + x];
+        if ((unsigned char)f->y < grid_h) {
+            c = &cells[(unsigned char)f->y * grid_w + x];
             if (f->remaining > 0) {
                 c->glyph = glyph_base + (rand() % nglyphs) + 1u;
                 c->glow  = GLOW_MAX;
@@ -330,7 +394,7 @@ static void anim_tick(unsigned char density, unsigned char speed,
         }
 
         f->y++;
-        if (f->y >= GRID_H) {
+        if (f->y >= grid_h) {
             f->y       = -1;
             f->remaining = 0;
         }
@@ -338,41 +402,41 @@ static void anim_tick(unsigned char density, unsigned char speed,
 
     // --- Glow decay ---
     c = cells;
-    for (idx = 0; idx < (unsigned int)GRID_W * GRID_H; idx++, c++) {
+    for (idx = 0; idx < total_cells; idx++, c++) {
         if (c->glyph && c->glow > 0) {
             c->glow--;
-            if (c->glow == GLOW_WHITE || c->glow == 0)
+            if (c->glow == GLOW_WHITE || c->glow == GLOW_GLOW || c->glow == 0)
                 c->dirty = 1;
         }
     }
 
     // --- Activate new feeders based on density setting ---
-    // density 1=sparse: ~1 new/frame  2=normal: ~2  3=dense: ~4
     new_feeders = (density < 2) ? 1 : (density < 3) ? 2 : 4;
     while (new_feeders--) {
-        x = (unsigned char)(rand() % GRID_W);
+        x = (unsigned char)(rand() % grid_w);
         f = &feeders[x];
         if (f->y >= 0) continue;
-        f->y         = (signed char)(rand() % (GRID_H / 3));
-        f->remaining = 5 + (unsigned char)(rand() % (GRID_H - 5));
+        f->y         = (signed char)(rand() % (grid_h / 3));
+        f->remaining = 5 + (unsigned char)(rand() % (grid_h - 5));
         f->throttle  = (speed >= 3) ? 0 : (speed == 2) ? (unsigned char)(rand() % 4) : (unsigned char)(rand() % 8);
     }
 
     // --- Render dirty cells ---
     c = cells;
-    for (y = 0; y < GRID_H; y++) {
-        for (x = 0; x < GRID_W; x++, c++) {
+    for (y = 0; y < grid_h; y++) {
+        for (x = 0; x < grid_w; x++, c++) {
             if (!c->dirty) continue;
             c->dirty = 0;
             if (!c->glyph) {
                 erase_cell(x, y);
             } else {
                 draw_cell(x, y, c->glyph - 1u,
-                    c->glow > GLOW_WHITE ? 2 : c->glow > 0 ? 1 : 0);
+                    c->glow > GLOW_WHITE ? 3 :
+                    c->glow > GLOW_GLOW  ? 2 :
+                    c->glow > 0          ? 1 : 0);
             }
         }
     }
-
 }
 
 // -----------------------------------------------------------------------
@@ -535,6 +599,8 @@ void start_animation(void)
     signed char   wid;
     unsigned char tick, density, speed, idle_skip, burst, b;
     unsigned char glyph_set, glyph_base, nglyphs;
+    unsigned char grid_w, grid_h;
+    unsigned short screen_w, screen_h;
     unsigned short mx0, my0;
     unsigned short resp;
     unsigned int  i;
@@ -555,19 +621,32 @@ void start_animation(void)
         nglyphs    = NGLYPHS_BINARY;
     }
 
-    // idle_skip: idles to wait between ticks (for slow speeds)
-    // burst: anim_ticks to run per idle (for fast speeds)
     idle_skip = (speed == 1) ? 6 : 1;
     burst     = (speed == 3) ? 3 : 1;
+
+    // Detect platform
+    is_msx = ((Sys_Type() & TYPE_MSX) != 0) ? 1 : 0;
+
+    if (is_msx) {
+        grid_w   = GRID_W_MSX;
+        grid_h   = GRID_H_MSX;
+        screen_w = SCREEN_W_MSX;
+        screen_h = SCREEN_H_MSX;
+    } else {
+        grid_w   = GRID_W_CPC;
+        grid_h   = GRID_H_CPC;
+        screen_w = SCREEN_W_CPC;
+        screen_h = SCREEN_H_CPC;
+    }
 
     srand((unsigned int)Sys_Counter());
 
     build_font();
 
-    // Reset grid
-    memset(cells,   0, sizeof(cells));
-    memset(feeders, 0, sizeof(feeders));
-    for (i = 0; i < GRID_W; i++)
+    // Reset grid (only the portion used by this platform)
+    memset(cells,   0, (unsigned int)grid_w * grid_h * sizeof(Cell));
+    memset(feeders, 0, grid_w * sizeof(Feeder));
+    for (i = 0; i < grid_w; i++)
         feeders[i].y = -1;
 
     // Open fullscreen animation window
@@ -579,8 +658,8 @@ void start_animation(void)
     anim_ctrl[0].param  = AREA_16COLOR | COLOR_BLACK;
     anim_ctrl[0].x      = 0;
     anim_ctrl[0].y      = 0;
-    anim_ctrl[0].w      = SCREEN_W;
-    anim_ctrl[0].h      = SCREEN_H;
+    anim_ctrl[0].w      = screen_w;
+    anim_ctrl[0].h      = screen_h;
     anim_ctrl[0].unused = 0;
 
     memset(&anim_cg, 0, sizeof(anim_cg));
@@ -592,14 +671,14 @@ void start_animation(void)
     anim_win.state    = WIN_NORMAL;
     anim_win.flags    = WIN_NOTTASKBAR | WIN_NOTMOVEABLE;
     anim_win.pid      = _sympid;
-    anim_win.w        = SCREEN_W;
-    anim_win.h        = SCREEN_H;
-    anim_win.wfull    = SCREEN_W;
-    anim_win.hfull    = SCREEN_H;
+    anim_win.w        = screen_w;
+    anim_win.h        = screen_h;
+    anim_win.wfull    = screen_w;
+    anim_win.hfull    = screen_h;
     anim_win.wmin     = 32;
     anim_win.hmin     = 24;
-    anim_win.wmax     = SCREEN_W;
-    anim_win.hmax     = SCREEN_H;
+    anim_win.wmax     = screen_w;
+    anim_win.hmax     = screen_h;
     anim_win.title    = empty_str;
     anim_win.status   = empty_str;
     anim_win.controls = &anim_cg;
@@ -644,7 +723,7 @@ void start_animation(void)
         if (++tick >= idle_skip) {
             tick = 0;
             for (b = 0; b < burst; b++)
-                anim_tick(density, speed, glyph_base, nglyphs);
+                anim_tick(density, speed, glyph_base, nglyphs, grid_w, grid_h);
         }
 
         Idle();
