@@ -43,11 +43,11 @@
 #define NGLYPHS_BINARY 2
 #define NGLYPHS_HANA   9
 #define NGLYPHS_TOTAL  11
-#define GLOW_MAX   8        /* glow frames on new char */
-#define GLOW_WHITE 5        /* glow > GLOW_WHITE -> white  (3 frames: 8,7,6) */
-#define GLOW_GLOW  3        /* glow > GLOW_GLOW  -> glow   (2 frames: 5,4)   */
-                            /* glow > 0          -> bright (3 frames: 3,2,1) */
-                            /* glow == 0         -> dim    (permanent)        */
+#define GLOW_MAX   4        /* glow frames on new char */
+#define GLOW_WHITE 2        /* glow > GLOW_WHITE -> white  (2 frames: 4,3) */
+#define GLOW_GLOW  1        /* glow > GLOW_GLOW  -> glow   (1 frame:  2)   */
+                            /* glow > 0          -> bright (1 frame:  1)   */
+                            /* glow == 0         -> dim    (permanent)     */
 
 // MSX palette ink values (4-bit nibble)
 #define MSX_BG     0x1      /* black         */
