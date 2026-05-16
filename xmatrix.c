@@ -43,11 +43,8 @@
 #define NGLYPHS_BINARY 2
 #define NGLYPHS_HANA   9
 #define NGLYPHS_TOTAL  11
-#define GLOW_MAX   4        /* glow frames on new char */
-#define GLOW_WHITE 2        /* glow > GLOW_WHITE -> white  (2 frames: 4,3) */
-#define GLOW_GLOW  1        /* glow > GLOW_GLOW  -> glow   (1 frame:  2)   */
-                            /* glow > 0          -> bright (1 frame:  1)   */
-                            /* glow == 0         -> dim    (permanent)     */
+#define GLOW_MAX   6        /* total glow frames on new char */
+#define GLOW_WHITE 3        /* glow > GLOW_WHITE -> white, else bright */
 
 // MSX palette ink values (4-bit nibble) — SymbOS colour indices (windows.h)
 #define MSX_BG     0x1      /* COLOR_BLACK  */
@@ -321,14 +318,13 @@ static void draw_cell(unsigned char cx, unsigned char cy,
     unsigned int   base_msx;
 
     if (is_msx) {
-        fnt = (color == 3 ? font_white_msx
-             : color == 2 ? font_glow_msx
+        fnt = (color == 2 ? font_white_msx
              : color == 1 ? font_bright_msx : font_dim_msx)
               + (unsigned int)gidx * 32u;
         base_msx = (unsigned int)cy * 2048u + (unsigned int)cx * 4u;
         vdp_write_char(base_msx, (char *)fnt);
     } else {
-        fnt = (color >= 2 ? font_white : color == 1 ? font_bright : font_dim)
+        fnt = (color == 2 ? font_white : color == 1 ? font_bright : font_dim)
               + gidx * 16;
         base_cpc = row_base[cy] + (unsigned short)cx * 2u;
         cpc_write_char(base_cpc, (char *)fnt);
@@ -405,7 +401,7 @@ static void anim_tick(unsigned char density, unsigned char speed,
     for (idx = 0; idx < total_cells; idx++, c++) {
         if (c->glyph && c->glow > 0) {
             c->glow--;
-            if (c->glow == GLOW_WHITE || c->glow == GLOW_GLOW || c->glow == 0)
+            if (c->glow == GLOW_WHITE || c->glow == 0)
                 c->dirty = 1;
         }
     }
@@ -431,9 +427,7 @@ static void anim_tick(unsigned char density, unsigned char speed,
                 erase_cell(x, y);
             } else {
                 draw_cell(x, y, c->glyph - 1u,
-                    c->glow > GLOW_WHITE ? 3 :
-                    c->glow > GLOW_GLOW  ? 2 :
-                    c->glow > 0          ? 1 : 0);
+                    c->glow > GLOW_WHITE ? 2 : c->glow > 0 ? 1 : 0);
             }
         }
     }
