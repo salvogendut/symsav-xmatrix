@@ -14,8 +14,8 @@
 //   high nibble = left pixel, low nibble = right pixel
 //   2 pixels per byte, 256 bytes per row (linear, no interleave).
 // VRAM written via VDP ports 0x98 (data) / 0x99 (address).
-// Using SymbOS default MSX palette: ink1=black, ink2=dim-green,
-//   ink3=bright-green, ink15=white.
+// SymbOS colour indices (windows.h): 1=black, 8=white, 9=green,
+//   10=lgreen, 13=gray — used for bg/dim/bright/glow/white.
 
 #include <symbos.h>
 #include <symbos/msgid.h>
@@ -49,12 +49,12 @@
                             /* glow > 0          -> bright (1 frame:  1)   */
                             /* glow == 0         -> dim    (permanent)     */
 
-// MSX palette ink values (4-bit nibble)
-#define MSX_BG     0x1      /* black         */
-#define MSX_DIM    0x2      /* medium green  */
-#define MSX_BRIGHT 0x3      /* light green   */
-#define MSX_GLOW   0xE      /* gray (#CCCCCC) — cooling step before white */
-#define MSX_WHITE  0xF      /* white         */
+// MSX palette ink values (4-bit nibble) — SymbOS colour indices (windows.h)
+#define MSX_BG     0x1      /* COLOR_BLACK  */
+#define MSX_DIM    0x9      /* COLOR_GREEN  (dark green)  */
+#define MSX_BRIGHT 0xA      /* COLOR_LGREEN (light green) */
+#define MSX_GLOW   0xD      /* COLOR_GRAY   (cooling step before white) */
+#define MSX_WHITE  0x8      /* COLOR_WHITE  */
 
 // -----------------------------------------------------------------------
 // 8x8 font source bitmaps: '.' = background, '#' = foreground pixel
